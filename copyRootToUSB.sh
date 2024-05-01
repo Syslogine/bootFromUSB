@@ -1,76 +1,117 @@
 #!/bin/bash
-# Copyright (c) 2016-21 Jetsonhacks 
+#
+# Script to copy the root directory to a specified destination volume or directory
+#
+# Copyright (c) 2016-24 Jetsonhacks
 # MIT License
-# Copy the root directory to the given volume 
 
-DESTINATION_TARGET=""
-VOLUME_LABEL=""
+# Set default values
+destination_path=""
+volume_label=""
+device_path=""
 
-function usage
-{
-    echo "usage: ./copyRootToUSB.sh [OPTION]"
-    echo "-d | --directory <directory>	Directory path to parent of kernel)"
-    echo "-p | --path <path>		e.g. /dev/sda1"
-    echo "-v | --volume_label		Name of the volume label"
-    echo "-h | --help  This message"
+# Function to display usage information
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "  -d, --directory <directory>  Directory path to the destination"
+    echo "  -p, --path <path>            Device path (e.g., /dev/sda1)"
+    echo "  -v, --volume-label <label>   Name of the volume label"
+    echo "  -h, --help                   Display this help message"
 }
 
-# Iterate through command line inputs
-while [ "$1" != "" ]; do
-    case $1 in
-        -d | --directory )      shift
-				DESTINATION_TARGET=$1
-                                ;;
-        -v | --volume_label )   shift
-                                VOLUME_LABEL=$1
-                                ;;
-        -p | --path )           shift
-                                DEVICE_PATH=$1
-                                ;;
-        -h | --help )           usage
-                                exit
-                                ;;
-        * )                     usage
-                                exit
-                                ;;
+# Parse command-line arguments using getopts
+while getopts ":d:p:v:h" opt; do
+    case $opt in
+        d)
+            destination_path="$OPTARG"
+            ;;
+        p)
+            device_path="$OPTARG"
+            ;;
+        v)
+            volume_label="$OPTARG"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            usage
+            exit 1
+            ;;
     esac
-   shift
 done
 
-if [ "$DEVICE_PATH" != "" ] ; then
-   echo "Device Path: "$DEVICE_PATH
-   DESTINATION_TARGET=$(findmnt -rno TARGET "$DEVICE_PATH")
-   if [ "$DESTINATION_TARGET" = "" ] ; then
-      echo "Unable to find the mount point of: ""$DEVICE_PATH"
-      exit 1
-   fi
-else
-   if [ "$DESTINATION_TARGET" = "" ] ; then
-      if [ "$VOLUME_LABEL" = "" ] ; then
-         # No destination path, no volume label
-         usage
-         exit 1
-      else
-         DEVICE_PATH=$(findfs LABEL="$VOLUME_LABEL")
-         if [ "$DEVICE_PATH" = "" ] ; then
-            echo "Unable to find mounted volume: ""$VOLUME_LABEL"
-            exit 1
-         else
-            echo "Device Path: "$DEVICE_PATH
-            DESTINATION_TARGET=$(findmnt -rno TARGET "$DEVICE_PATH")
-            echo "Destination Target: "$DESTINATION_TARGET
-            if [ "$DESTINATION_TARGET" = "" ] ; then
-               echo "Unable to find the mount point of: ""$VOLUME_LABEL"
-               exit 1
-            fi
-          fi
-       fi
+# Function to find the mount point of a device
+find_mount_point() {
+    local device_path="$1"
+    local mount_point=""
+
+    mount_point=$(findmnt -rno TARGET "$device_path" 2>/dev/null)
+    if [ -z "$mount_point" ]; then
+        echo "Error: Unable to find the mount point of: $device_path" >&2
+        return 1
+    fi
+
+    echo "$mount_point"
+    return 0
+}
+
+# Function to find the device path by volume label
+find_device_by_label() {
+    local volume_label="$1"
+    local device_path=""
+
+    device_path=$(findfs LABEL="$volume_label" 2>/dev/null)
+    if [ -z "$device_path" ]; then
+        echo "Error: Unable to find mounted volume: $volume_label" >&2
+        return 1
+    fi
+
+    echo "$device_path"
+    return 0
+}
+
+# Check if the destination path or volume label is provided
+if [ -z "$destination_path" ] && [ -z "$volume_label" ]; then
+    echo "Error: Please provide either a destination path or a volume label." >&2
+    usage
+    exit 1
+fi
+
+# Find the destination path
+if [ -n "$device_path" ]; then
+    destination_path=$(find_mount_point "$device_path")
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+elif [ -n "$volume_label" ]; then
+    device_path=$(find_device_by_label "$volume_label")
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+    destination_path=$(find_mount_point "$device_path")
+    if [ $? -ne 0 ]; then
+        exit 1
     fi
 fi
 
-echo "Target: "$DESTINATION_TARGET
-# apt-get update should make rsync available on a new system
-sudo apt-get update
-sudo apt-get install rsync -y 
-sudo rsync -axHAWX --numeric-ids --info=progress2 --exclude=/proc / "$DESTINATION_TARGET"
+echo "Target: $destination_path"
 
+# Install rsync if not available
+if ! command -v rsync &>/dev/null; then
+    sudo apt-get update
+    sudo apt-get install rsync -y
+fi
+
+# Copy the root directory to the destination
+sudo rsync -axHAWX --numeric-ids --info=progress2 --exclude=/proc / "$destination_path"
+exit_code=$?
+
+if [ $exit_code -ne 0 ]; then
+    echo "Error: Failed to copy the root directory to $destination_path" >&2
+    exit $exit_code
+fi
+
+echo "Root directory copied successfully to $destination_path"

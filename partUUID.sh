@@ -1,36 +1,50 @@
 #!/bin/bash
-# Copyright (c) 2016-2021 Jetsonhacks 
+#
+# Script to retrieve the PARTUUID (Partition UUID) of a specified disk partition
+#
+# Copyright (c) 2016-2024 Jetsonhacks
 # MIT License
-# print out the PARTUUID of the given disk partition
-# PARTUUID is a partition table level UUID for the partition, a feature of GPT partitioned disks
-# UUID is a file system UUID which is retrieved from the filesystem metadata inside a partion
 
-PARTITION_TARGET="/dev/sda1"
-function usage
-{
-    echo "usage: ./partUUID.sh [partition [-p partition ]  | [-h]]"
-    echo "-p | --partition ; default /dev/sda1"
-    echo "-h | --help  This message"
+# Set the default partition target
+partition_target="/dev/sda1"
+
+# Function to display usage information
+usage() {
+    echo "Usage: $0 [-p partition] [-h]"
+    echo "  -p, --partition  Specify the partition (default: /dev/sda1)"
+    echo "  -h, --help       Display this help message"
 }
 
-# Iterate through command line inputs
-while [ "$1" != "" ]; do
-    case $1 in
-        -p | --partition )      shift
-				PARTITION_TARGET=$1
-                                ;;
-        -h | --help )           usage
-                                exit
-                                ;;
-        * )                    
-                               ;;
+# Parse command-line arguments using getopts
+while getopts ":p:h" opt; do
+    case $opt in
+        p)
+            partition_target="$OPTARG"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            usage
+            exit 1
+            ;;
     esac
-    shift
 done
 
-PARTUUID_STRING=$(sudo blkid -o value -s PARTUUID $PARTITION_TARGET)
-echo PARTUUID of Partition: $PARTITION_TARGET
-echo $PARTUUID_STRING
-echo 
-echo Sample snippet for /boot/extlinux/extlinux.conf entry:
-echo 'APPEND ${cbootargs} root=PARTUUID='$PARTUUID_STRING rootwait rootfstype=ext4
+# Check if the specified partition exists
+if ! blkid -p "$partition_target" >/dev/null 2>&1; then
+    echo "Error: Partition $partition_target not found" >&2
+    exit 1
+fi
+
+# Get the PARTUUID of the specified partition
+partuuid_string=$(blkid -o value -s PARTUUID "$partition_target")
+
+# Print the PARTUUID and a sample extlinux.conf snippet
+echo "PARTUUID of Partition: $partition_target"
+echo "$partuuid_string"
+echo
+echo "Sample snippet for /boot/extlinux/extlinux.conf entry:"
+echo 'APPEND ${cbootargs} root=PARTUUID='"$partuuid_string"' rootwait rootfstype=ext4'
