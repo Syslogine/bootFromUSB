@@ -79,14 +79,14 @@ The UUID of the disk in the GPT partition table is called the PARTUUID. This is 
 
 There is a convenience file: partUUID.sh which will determine the PARTUUID of a given device. This is useful in determining the PARTUUID of the USB drive. Note: If the PARTUUID returned is not similar in length to the sample-extlinux.conf example (32a76e0a-9aa7-4744-9954-dfe6f353c6a7), then it is likely that the device is not formatted correctly.
 
-```
-$ ./partUUID.sh
+```bash
+./partUUID.sh
 ```
 
 While this defaults to sda1 (/dev/sda1), you can also determine other drive PARTUUIDs. The /dev/ is assumed, use the -d flag. For example:
 
-```
-$ ./partUUID.sh -d sdb1
+```bash
+sudo ./partUUID.sh -d sdb1
 ```
 
 ## Step 5 Try It Out!
